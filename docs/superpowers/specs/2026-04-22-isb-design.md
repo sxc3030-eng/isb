@@ -279,6 +279,7 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
 # RESEND_API_KEY=
 # AUTH_SECRET=
 # S3_BUCKET=
+# PRO_MODE_KEY=          # 32-char secret pour activation Pro via cookie
 ```
 
 ### Estimation Phase 1 → Phase 2
@@ -398,7 +399,7 @@ Simon génère **5 briefs** sur ses propres idées et valide qualité. Si moins 
 8. ✅ Download JSON fonctionne (validé Zod)
 9. ✅ Permalien `/r/<uuid>` ouvre brief en lecture seule
 10. ✅ 4 stubs Phase 2 en place et testés (`payment`, `auth`, `storage`, `email`)
-11. ✅ ≥ 75 tests verts (50 unit + 17 integration + 5 E2E + 3 a11y)
+11. ✅ ≥ 80 tests verts (52 unit + 18 integration + 7 E2E + 3 a11y)
 12. ✅ **Lighthouse a11y score ≥ 95** sur `/` (états NAMING, ASKING, COMPLETE)
 13. ✅ Manual NVDA test sur happy path : pas d'obstacle bloquant
 14. ✅ Manual QA : 4/5 briefs Simon "utilisables sans retouche"
@@ -529,6 +530,65 @@ Cloudflare
 
 À 10+ paiements/mois → profitable.
 
+## 15. Pro Mode (usage interne Simon + tier premium Phase 2+)
+
+### Objectif
+Débloquer toutes les limites du free tier pour Simon (qui dogfood l'outil) et, plus tard, vendre comme tier supérieur aux clients sérieux.
+
+### Activation
+
+```typescript
+// lib/pro-mode.ts
+export function isProMode(): boolean {
+  if (process.env.PHASE === '1') return true;          // dogfood = toujours pro
+  // Phase 2 : cookie signé OU header avec PRO_MODE_KEY
+  const cookieValue = cookies().get('pro_mode')?.value;
+  return cookieValue === process.env.PRO_MODE_KEY;
+}
+```
+
+**Phase 1** : auto-activé (Simon est seul utilisateur).
+**Phase 2** : URL d'activation `/?pro=<KEY>` set le cookie, persistant 365 jours. Clé secrète dans `.env`.
+
+### Différences feature par feature
+
+| Feature | Standard | Pro Mode |
+|---|---|---|
+| Preview teaser | 3 modules visibles, reste flouté | **Tous modules visibles, pas de teaser** |
+| Architecture profondeur | 5-8 modules | **10-15 modules + sous-modules détaillés** |
+| Tech stack | Stack reco (1 par couche) | **Stack reco + 2 alternatives évaluées par couche** |
+| MVP plan | 3 étapes simples | **Roadmap 3 phases × 3 étapes (MVP / Beta / GA)** |
+| Risques | 3-5 risques principaux | **Tous risques + mitigations détaillées + niveau d'effort** |
+| Section bonus Pro | — | **"Prompt for Claude" : prompt copy-paste prêt à donner à Claude Code/Cursor pour démarrer le build immédiatement** |
+| Section bonus Pro | — | **"Cost & timeline estimate" : estimation tokens/temps pour build full** |
+| Coût génération | ~$1.90 | **~$3-5** (Opus avec prompt étendu, plus de tokens output) |
+
+### Pricing Phase 2 (proposé)
+| Tier | Prix | Cible |
+|---|---|---|
+| Free preview | $0 | Lead capture |
+| Standard | $49.99 | Mass market (entrepreneur, freelance) |
+| **Pro** | **$199** | Sérieux (CTO, agence, projet enterprise) |
+| Pro Annual Pass | $999/an | Power users (10+ briefs/an), inclut updates futurs |
+
+### Implémentation
+- Composant Pro Mode badge visible top-right quand actif
+- Prompts dédiés `prompts/pass2-pro.md` (deeper instructions)
+- Conditional rendering : preview teaser absent en Pro, sections bonus visibles en Pro
+- Same Zod schema mais avec champs `pro_only` optionnels (`prompt_for_claude`, `cost_estimate`, `roadmap_phases[]`)
+
+### `.env` ajouté
+```env
+PRO_MODE_KEY=<random-32-char-secret>   # Phase 2 : clé d'activation cookie
+```
+
+### Tests ajoutés (~5)
+- Unit : `isProMode()` retourne true en Phase 1, dépend du cookie en Phase 2
+- Unit : Zod schema accepte champs Pro optionnels
+- Integration : pipeline Pro génère sections bonus
+- E2E : URL `/?pro=<KEY>` set cookie + débloque vue
+- E2E : sans cookie en Phase 2 → preview standard limité
+
 ## 14. Decision log
 
 | Décision | Raisonnement |
@@ -545,3 +605,4 @@ Cloudflare
 | **Fly.io Montreal hosting Phase 2** | Compliance Canada/Quebec, cohérent avec posture FORGE. Containers = Playwright OK. |
 | **WCAG 2.1 AA non-négociable** | Légal (AODA, ADA, EAA). Critique vente entreprise/gouvernement. |
 | Pas d'auth Phase 2 initiale | Paywall sans compte = friction min. Auth optionnel plus tard si historique demandé. |
+| **Pro Mode tier** | Sert dogfood Simon (Phase 1) + monétisation premium Phase 2+ ($199/brief, $999/an). Section bonus "Prompt for Claude" = bridge direct vers FORGE workflow. |
